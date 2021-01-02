@@ -2,5 +2,5 @@
 Fast Automatic Music Video (generator)
 
 ## Requirements
-- [audio-display](https://gitlab.com/zeograd/audio-display)
+- [audio-display](https://github.com/davidovski/audio-display)
 - [ffmpeg](https://ffmpeg.org/)
