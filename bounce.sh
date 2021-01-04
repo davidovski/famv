@@ -10,14 +10,16 @@ bounce_filter() {
 	MIN=0
 	OF=$TEMPDIR/filter_script.txt
 	BASS_LOG=$TEMPDIR/log.txt
+	echo "Making lowpass version of song.wav"
+	ffmpeg $FOPTS  -i $AUDIOFILE -af "[0]lowpass=f=100[o1]"  $BASS_FILE
 
-	ffmpeg $FOPTS $DECODER -i $AUDIOFILE -af lowpass=f=200 $ENCODER $BASS_FILE
-	ffmpeg -i $BASS_FILE -af astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=$BASS_LOG -f null -
+	echo "Gathering data for the bass"
+	ffmpeg $FOPTS -i $BASS_FILE -af astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=$BASS_LOG -f null -
 
 	filter_line() 
 	{ 
-		V="$2^4"
-		SHIFT=20
+		V="$2^20"
+		SHIFT=40
 		echo "$1 rgbashift bh '$V * $SHIFT';"
 		echo "$1 rgbashift rh '$V * -$SHIFT';"
 	#crop=in_h*9/16:in_h,scale=-2:400
@@ -26,13 +28,14 @@ bounce_filter() {
 	} 
 
 	read_value() {
-		p=$( echo "$1" | sed 's/.*=//' | sed 's/-//')
-		if [[ $p = "inf" || $( bc -l <<< "p > 100" ) -eq 1 ]]; then
-			p=100
+		p=$(sed 's/.*-//' <<< $1)
+
+		if [[ $p = "inf" ]]; then
+			echo 0
+		else		
+			echo "if ($p < 100.0) (1.0 - ($p / 100.0)) else (0)" | bc -l
+
 		fi
-		
-		value=$( ( echo "1.0 - ($p / 100.0)" | bc -l ) | sed 's/\n//')
-		echo "$value";
 	}
 
 	MAX=100
@@ -44,20 +47,24 @@ bounce_filter() {
 	SIZE=$( wc -l $BASS_LOG )
 
 	# Parse the bass log and create a filter file
+	echo "Parsing bass levels and creating the filter"
+	time(
 	i=0
 	while read line; do
-		timecode=$(printf "$line" | sed 's:.*\:::')
+		timecode=$( sed 's:.*\:::' <<< $line )
 		read p
-		value=$( echo "($( read_value $p) )" | bc -l )
+		value=$( read_value $p )
 		
-		echo "$(filter_line $timecode $value)" >> $OF
+		echo "$( filter_line $timecode $value )" >> $OF
 
 		((i=i+2))
 		echo -ne "$i / $SIZE      \r"
 
 	done < $BASS_LOG
 
+)
 	# Apply the filter file onto the final product
+	echo "Applying filter" 
 	ffmpeg $FOPTS $DECODER  -i $VIDEOFILE -filter_complex "[0:v]sendcmd=f=$OF,rgbashift" $ENCODER $DEST
 	
 }
